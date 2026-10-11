@@ -19,17 +19,20 @@ PKG_MAINTAINER:=Nexwall
 # runs ungated, but the managed signatures and the license-checked API are not there either.
 # See nexwall-internal/msp/IPS_PLUGIN_AND_SIGNATURES.md.
 PLUGIN_FEED_VERSION:=1.0.1
-PLUGIN_FEED_SHA256:=54290609e9a704165a07d768b633f06db885fe3016ceb4b157856a53bf50bfc1
+PLUGIN_FEED_SHA256_x86_64:=54290609e9a704165a07d768b633f06db885fe3016ceb4b157856a53bf50bfc1
 PLUGIN_FEED:=https://updates.nexwall.com.br/vendor/stable
 
 SNORT_ABI:=$(shell sed -n 's/^PKG_VERSION:=//p' $(CURDIR)/../snort3/Makefile)-r$(shell sed -n 's/^PKG_RELEASE:=//p' $(CURDIR)/../snort3/Makefile)
 
+# One pinned build per architecture. An option that is on for an architecture without a pin stops the build:
+# a silent fallback would ship an unlicensed community build.
 ifeq ($(CONFIG_NEXWALL_SNORT_PLUGINS_VENDOR),y)
-ifeq ($(ARCH),x86_64)
-PKG_SOURCE:=nexwall-snort-plugins_$(PLUGIN_FEED_VERSION)_x86_64.tar.gz
-PKG_SOURCE_URL:=$(PLUGIN_FEED)/x86_64
-PKG_HASH:=$(PLUGIN_FEED_SHA256)
+ifeq ($(PLUGIN_FEED_SHA256_$(ARCH)),)
+$(error nexwall-snort-plugins: no vendor binary is pinned for architecture $(ARCH); set NEXWALL_SNORT_PLUGINS_VENDOR=n for an explicit community build)
 endif
+PKG_SOURCE:=nexwall-snort-plugins_$(PLUGIN_FEED_VERSION)_$(ARCH).tar.gz
+PKG_SOURCE_URL:=$(PLUGIN_FEED)/$(ARCH)
+PKG_HASH:=$(PLUGIN_FEED_SHA256_$(ARCH))
 endif
 
 include $(INCLUDE_DIR)/package.mk
@@ -39,7 +42,7 @@ define Package/nexwall-snort-plugins
 	CATEGORY:=Nexwall
 	TITLE:=Nexwall IPS license gate
 	DEPENDS:=+snort3 +libgcrypt +nexwall-license
-	PKGARCH:=$(if $(CONFIG_NEXWALL_SNORT_PLUGINS_VENDOR),$(ARCH),all)
+	PKGARCH:=$(if $(CONFIG_NEXWALL_SNORT_PLUGINS_VENDOR),$(ARCH_PACKAGES),all)
 endef
 
 define Package/nexwall-snort-plugins/config

@@ -19,18 +19,24 @@ PKG_MAINTAINER:=Nexwall
 # so a mismatch is refused at build time). The enforcement and statistics plugins act only while the Nexwall license
 # core hands them a valid short-lived token. Without the package (community build) the engine still classifies
 # traffic but nothing is blocked, accounted or exported. See nexwall-internal/msp/DPI_PLUGIN_LICENSE_TOKEN.md.
-PLUGIN_FEED_VERSION:=1.0.4
-PLUGIN_FEED_SHA256:=032da6ee342dc0afa19acf3cb75462b79e9f5dde321888ae9207aff7be11c22d
+# Versions differ per architecture: x86_64 follows the main product; the ARM builds are compiled from netify-plugins-pro
+# inside the ARM tree (see docs/PRIVATE_COMPONENTS.md) and pinned here once built (no pin: the option stops the build).
+PLUGIN_FEED_VERSION_x86_64:=1.0.4
+PLUGIN_FEED_VERSION:=$(PLUGIN_FEED_VERSION_$(ARCH))
+PLUGIN_FEED_SHA256_x86_64:=032da6ee342dc0afa19acf3cb75462b79e9f5dde321888ae9207aff7be11c22d
 PLUGIN_FEED:=https://updates.nexwall.com.br/vendor/stable
 
 NETIFYD_ABI:=$(shell sed -n 's/^PKG_VERSION:=//p' $(CURDIR)/../netifyd/Makefile)-r$(shell sed -n 's/^PKG_RELEASE:=//p' $(CURDIR)/../netifyd/Makefile)
 
+# One pinned build per architecture. An option that is on for an architecture without a pin stops the build:
+# a silent fallback would ship an unlicensed community build.
 ifeq ($(CONFIG_NEXWALL_NETIFY_PLUGINS_VENDOR),y)
-ifeq ($(ARCH),x86_64)
-PKG_SOURCE:=nexwall-netify-plugins_$(PLUGIN_FEED_VERSION)_x86_64.tar.gz
-PKG_SOURCE_URL:=$(PLUGIN_FEED)/x86_64
-PKG_HASH:=$(PLUGIN_FEED_SHA256)
+ifeq ($(PLUGIN_FEED_SHA256_$(ARCH)),)
+$(error nexwall-netify-plugins: no vendor binary is pinned for architecture $(ARCH); set NEXWALL_NETIFY_PLUGINS_VENDOR=n for an explicit community build)
 endif
+PKG_SOURCE:=nexwall-netify-plugins_$(PLUGIN_FEED_VERSION)_$(ARCH).tar.gz
+PKG_SOURCE_URL:=$(PLUGIN_FEED)/$(ARCH)
+PKG_HASH:=$(PLUGIN_FEED_SHA256_$(ARCH))
 endif
 
 include $(INCLUDE_DIR)/package.mk
@@ -40,7 +46,7 @@ define Package/nexwall-netify-plugins
 	CATEGORY:=Nexwall
 	TITLE:=Nexwall traffic engine plugins
 	DEPENDS:=+netifyd +libnetfilter-conntrack +libgcrypt +nexwall-license
-	PKGARCH:=$(if $(CONFIG_NEXWALL_NETIFY_PLUGINS_VENDOR),$(ARCH),all)
+	PKGARCH:=$(if $(CONFIG_NEXWALL_NETIFY_PLUGINS_VENDOR),$(ARCH_PACKAGES),all)
 endef
 
 define Package/nexwall-netify-plugins/config

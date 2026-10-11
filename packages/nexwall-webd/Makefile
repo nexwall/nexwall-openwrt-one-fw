@@ -19,15 +19,20 @@ PKG_MAINTAINER:=Nexwall
 # package (community build) Squid runs but nothing is redirected to it and nothing is scanned.
 # See nexwall-internal/msp/WEB_PROTECTION.md and the license token notes (DPI_PLUGIN_LICENSE_TOKEN.md).
 WEBD_FEED_VERSION:=1.5.0
-WEBD_FEED_SHA256:=41444b8f8a33634dc383e71c7d67d8d3703fe474ce7b3b1361756acb54d19406
+WEBD_FEED_SHA256_x86_64:=41444b8f8a33634dc383e71c7d67d8d3703fe474ce7b3b1361756acb54d19406
+WEBD_FEED_SHA256_aarch64:=cd1133dfddc2f3de124a82ff3ff2035f3cf9cd00c6f7bfa2e958480b9f5190e5
+WEBD_FEED_SHA256_arm:=d0096db3f7169944b8a8c8935cbe23d259daa6b37454ffc9f6580d4bc5504e7f
 WEBD_FEED:=https://updates.nexwall.com.br/vendor/stable
 
+# One pinned build per architecture. An option that is on for an architecture without a pin stops the build:
+# a silent fallback would ship an unlicensed community build.
 ifeq ($(CONFIG_NEXWALL_WEBD_VENDOR),y)
-ifeq ($(ARCH),x86_64)
-PKG_SOURCE:=nexwall-webd_$(WEBD_FEED_VERSION)_x86_64.tar.gz
-PKG_SOURCE_URL:=$(WEBD_FEED)/x86_64
-PKG_HASH:=$(WEBD_FEED_SHA256)
+ifeq ($(WEBD_FEED_SHA256_$(ARCH)),)
+$(error nexwall-webd: no vendor binary is pinned for architecture $(ARCH); set NEXWALL_WEBD_VENDOR=n for an explicit community build)
 endif
+PKG_SOURCE:=nexwall-webd_$(WEBD_FEED_VERSION)_$(ARCH).tar.gz
+PKG_SOURCE_URL:=$(WEBD_FEED)/$(ARCH)
+PKG_HASH:=$(WEBD_FEED_SHA256_$(ARCH))
 endif
 
 include $(INCLUDE_DIR)/package.mk
@@ -37,7 +42,7 @@ define Package/nexwall-webd
 	CATEGORY:=Nexwall
 	TITLE:=Web Protection service binary
 	DEPENDS:=+nexwall-license
-	PKGARCH:=$(if $(CONFIG_NEXWALL_WEBD_VENDOR),$(ARCH),all)
+	PKGARCH:=$(if $(CONFIG_NEXWALL_WEBD_VENDOR),$(ARCH_PACKAGES),all)
 endef
 
 define Package/nexwall-webd/config

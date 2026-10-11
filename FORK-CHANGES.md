@@ -93,3 +93,12 @@ unchanged to keep future merges from upstream small. Original copyright headers 
 - `nexwall-netify-plugins` 1.0.4: `nx-sink-log` adds the payloads up and writes the snapshot once per window of at least 10 s; `nx-proc-aggregator` reports a flow the application database does not know under the registered domain of its server name.
 - `ns-ui` 3.0.1: Threat Analytics Sandbox stage shows its real state.
 - DPI catalog 2026.10.13.1 (license server): `netify.nexwall` application (nexwall.com.br and the Nexwall server).
+## ARM fork (firewall-msp-arm), from 26.1.1
+
+Separate project from nexwall/firewall-msp (x86); no branches in the main repository. Changes against the x86 tree:
+
+- `build-nexwall.sh`: never shares state with the x86 build. Own image `nexwall-arm-next`, container `nexwall-arm-builder`, volumes `nexwall_arm_builder_<OWRT>_<TARGET>_*`. Refuses x86 targets and refuses to run while the x86 build is running. The source-download volume is seeded once by a read-only copy of the x86 one.
+- `build.conf.defaults`: `TARGET=armsr_armv8`.
+- `config/targets/armsr_armv8.conf`: generic ARM64 UEFI target (`ARCH_PACKAGES=aarch64_generic`). Netify and Snort plugin vendor binaries are explicitly off until built for ARM.
+- `config/targets/armsr_armv8.expected-drops` and `builder/configure-build.sh`: `make defconfig` silently drops symbols a target cannot satisfy; any dropped symbol that is not on the list now stops the build. Targets without the list (x86) are unchanged.
+- Vendor recipes (`nexwall-license`, `nexwall-webd`, `nexwall-netify-plugins`, `nexwall-snort-plugins`): one pinned SHA-256 per architecture, file and feed directory keyed by `$(ARCH)` (`x86_64`, `aarch64`, `arm`). An option that is on for an architecture without a pin stops the build instead of silently producing an unlicensed community build. `PKGARCH` is `$(ARCH_PACKAGES)` (equal to `$(ARCH)` on x86_64, `aarch64_generic` on armsr/armv8, where `$(ARCH)` would make apk reject the package). x86_64 values are unchanged.

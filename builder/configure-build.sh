@@ -51,3 +51,18 @@ echo "${repo_channel}" > files/etc/repo-channel
 
 # Expand configuration
 make defconfig
+
+# ARM fork: defconfig silently drops every symbol whose dependencies a target does not meet. For a target that has an
+# expected-drops list, a requested symbol that is missing from the result and not on the list stops the build.
+expected="config/targets/${target}.expected-drops"
+if [ -f "$expected" ]; then
+    cat config/*.conf "config/targets/${target}.conf" | grep -E '^CONFIG_[A-Za-z0-9_+-]+=[ym]$' | sort -u > /tmp/requested.config
+    grep -E '^CONFIG_[A-Za-z0-9_+-]+=[ym]$' .config | sort -u > /tmp/result.config
+    unexpected=$(comm -23 /tmp/requested.config /tmp/result.config | grep -v -x -F -f "$expected" || true)
+    if [ -n "$unexpected" ]; then
+        echo "ERROR: defconfig dropped symbols that are not in $expected:" >&2
+        echo "$unexpected" >&2
+        exit 1
+    fi
+    echo "defconfig check: no unexpected dropped symbols"
+fi

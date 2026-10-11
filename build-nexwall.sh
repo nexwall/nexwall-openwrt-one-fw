@@ -37,6 +37,21 @@ BUILD_VERBOSE=${BUILD_VERBOSE:-}
 # Parallel make jobs inside the builder; empty means one per CPU. Lower it on small-RAM hosts.
 MAKE_JOBS=${MAKE_JOBS:-}
 
+# ARM fork: this build never shares a container, image or volume with the x86 build (nexwall/firewall-msp). The names
+# below are the ones nexwall/internal-arm (lib-arm.sh) expects.
+case "$TARGET" in
+    x86*) echo "ERROR: $TARGET is an x86 target; x86 is built from the main repository" >&2; exit 1 ;;
+esac
+BUILDER_PREFIX=nexwall-arm
+IMAGE_NAME="${BUILDER_PREFIX}-next"
+CONTAINER_NAME="${BUILDER_PREFIX}-builder"
+VOL_PREFIX="nexwall_arm_builder_${OWRT_VERSION}_${TARGET}"
+# one build at a time on the server (CPU, ccache): only checks the x86 container, never touches it
+if podman ps --format '{{.Names}}' | grep -qx nethsecurity-builder; then
+    echo "ERROR: the x86 build is running; not starting an ARM build at the same time" >&2
+    exit 1
+fi
+
 if [ -f "./private-key.pem" ] && [ -f "./public-key.pem" ]; then
     APK_PRIV_KEY="$(cat ./private-key.pem)"
     APK_PUB_KEY="$(cat ./public-key.pem)"
@@ -47,7 +62,7 @@ podman build \
     --force-rm \
     --layers \
     --file builder/Containerfile \
-    --tag nethsecurity-next \
+    --tag "$IMAGE_NAME" \
     --jobs 0 \
     --build-arg OWRT_VERSION="$OWRT_VERSION" \
     --build-arg REPO_CHANNEL="$REPO_CHANNEL" \
@@ -55,6 +70,19 @@ podman build \
     --build-arg NETHSECURITY_VERSION="$NETHSECURITY_VERSION" \
     --build-arg BUILD_SEMVER_SUFFIX="$BUILD_SEMVER_SUFFIX" \
     .
+
+# Source tarballs do not depend on the target: seed this target's download volume once from the x86 one (mounted
+# read-only), so the ARM build does not have to fetch everything again.
+SEED_SRC="nethsecurity_builder_${OWRT_VERSION}_downloads"
+if ! podman volume exists "${VOL_PREFIX}_downloads" && podman volume exists "$SEED_SRC"; then
+    echo "Seeding ${VOL_PREFIX}_downloads from $SEED_SRC (read-only copy)..."
+    podman volume create "${VOL_PREFIX}_downloads" >/dev/null
+    podman run --rm --entrypoint cp \
+        --volume "$SEED_SRC:/from:ro" \
+        --volume "${VOL_PREFIX}_downloads:/home/buildbot/openwrt/download" \
+        "$IMAGE_NAME" -a /from/. /home/buildbot/openwrt/download/ \
+        || { podman volume rm -f "${VOL_PREFIX}_downloads" >/dev/null; echo "ERROR: seeding failed" >&2; exit 1; }
+fi
 
 set +e
 
@@ -64,27 +92,27 @@ podman run \
     --env APK_PUB_KEY="$APK_PUB_KEY" \
     --env BUILD_VERBOSE="$BUILD_VERBOSE" \
     --env MAKE_JOBS="$MAKE_JOBS" \
-    --name nethsecurity-builder \
+    --name "$CONTAINER_NAME" \
     --interactive \
     --tty \
     --replace \
-    --volume "nethsecurity_builder_${OWRT_VERSION}_build:/home/buildbot/openwrt/build_dir" \
-    --volume "nethsecurity_builder_${OWRT_VERSION}_staging:/home/buildbot/openwrt/staging_dir" \
-    --volume "nethsecurity_builder_${OWRT_VERSION}_cache:/home/buildbot/openwrt/.ccache" \
-    --volume "nethsecurity_builder_${OWRT_VERSION}_downloads:/home/buildbot/openwrt/download" \
-    --volume "nethsecurity_builder_${OWRT_VERSION}_dl:/home/buildbot/openwrt/dl" \
-    nethsecurity-next \
+    --volume "${VOL_PREFIX}_build:/home/buildbot/openwrt/build_dir" \
+    --volume "${VOL_PREFIX}_staging:/home/buildbot/openwrt/staging_dir" \
+    --volume "${VOL_PREFIX}_cache:/home/buildbot/openwrt/.ccache" \
+    --volume "${VOL_PREFIX}_downloads:/home/buildbot/openwrt/download" \
+    --volume "${VOL_PREFIX}_dl:/home/buildbot/openwrt/dl" \
+    "$IMAGE_NAME" \
     "$@" || status=$?
 
 if [ $status -eq 0 ]; then
     # Clean up previous builds
     rm -rf bin
-    podman cp nethsecurity-builder:/home/buildbot/openwrt/bin bin
+    podman cp "$CONTAINER_NAME":/home/buildbot/openwrt/bin bin
 fi
 
 rm -rf build-logs
-podman cp nethsecurity-builder:/home/buildbot/openwrt/logs build-logs
-podman stop nethsecurity-builder
-podman rm nethsecurity-builder
+podman cp "$CONTAINER_NAME":/home/buildbot/openwrt/logs build-logs
+podman stop "$CONTAINER_NAME"
+podman rm "$CONTAINER_NAME"
 
 exit $status
