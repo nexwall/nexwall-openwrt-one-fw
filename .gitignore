@@ -9,3 +9,4 @@ tools/netifyd-update/work/
 tools/netifyd-update/dist/
 __pycache__/
 *.pyc
+vendor-local/

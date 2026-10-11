@@ -84,6 +84,24 @@ if ! podman volume exists "${VOL_PREFIX}_downloads" && podman volume exists "$SE
         || { podman volume rm -f "${VOL_PREFIX}_downloads" >/dev/null; echo "ERROR: seeding failed" >&2; exit 1; }
 fi
 
+# Vendor packages built locally from the private repositories (license core, web protection service, and later the
+# traffic-engine plugins) are NOT published anywhere: put the tarballs in vendor-local/ (git-ignored) and they are
+# copied into this target's download cache before every build. The recipes pin a SHA-256 per file, so a wrong or
+# missing file stops the build; nothing is fetched from the vendor feed. Override the directory with VENDOR_LOCAL_DIR.
+VENDOR_LOCAL_DIR="${VENDOR_LOCAL_DIR:-$PWD/vendor-local}"
+if ls "$VENDOR_LOCAL_DIR"/*.tar.gz >/dev/null 2>&1; then
+    podman volume exists "${VOL_PREFIX}_downloads" || podman volume create "${VOL_PREFIX}_downloads" >/dev/null
+    echo "Copying local vendor packages into ${VOL_PREFIX}_downloads:"
+    ls -1 "$VENDOR_LOCAL_DIR"/*.tar.gz | sed 's#.*/#  #'
+    podman run --rm --entrypoint sh \
+        --volume "$VENDOR_LOCAL_DIR:/vendor:ro" \
+        --volume "${VOL_PREFIX}_downloads:/home/buildbot/openwrt/download" \
+        "$IMAGE_NAME" -c 'cp -f /vendor/*.tar.gz /home/buildbot/openwrt/download/' \
+        || { echo "ERROR: copying the local vendor packages failed" >&2; exit 1; }
+else
+    echo "No local vendor packages in $VENDOR_LOCAL_DIR: the recipes will try the vendor feed and stop if a pinned file is missing"
+fi
+
 set +e
 
 status=0
