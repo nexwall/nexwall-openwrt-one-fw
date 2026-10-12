@@ -42,15 +42,17 @@ MAKE_JOBS=${MAKE_JOBS:-}
 case "$TARGET" in
     x86*) echo "ERROR: $TARGET is an x86 target; x86 is built from the main repository" >&2; exit 1 ;;
 esac
-BUILDER_PREFIX=nexwall-arm
+BUILDER_PREFIX=nexwall-armv7
 IMAGE_NAME="${BUILDER_PREFIX}-next"
 CONTAINER_NAME="${BUILDER_PREFIX}-builder"
-VOL_PREFIX="nexwall_arm_builder_${OWRT_VERSION}_${TARGET}"
+VOL_PREFIX="nexwall_armv7_builder_${OWRT_VERSION}_${TARGET}"
 # one build at a time on the server (CPU, ccache): only checks the x86 container, never touches it
-if podman ps --format '{{.Names}}' | grep -qx nethsecurity-builder; then
-    echo "ERROR: the x86 build is running; not starting an ARM build at the same time" >&2
-    exit 1
-fi
+for other in nethsecurity-builder nexwall-arm-builder; do
+    if podman ps --format '{{.Names}}' | grep -qx "$other"; then
+        echo "ERROR: $other is running; not starting an ARMv7 build at the same time" >&2
+        exit 1
+    fi
+done
 
 if [ -f "./private-key.pem" ] && [ -f "./public-key.pem" ]; then
     APK_PRIV_KEY="$(cat ./private-key.pem)"
@@ -73,8 +75,11 @@ podman build \
 
 # Source tarballs do not depend on the target: seed this target's download volume once from the x86 one (mounted
 # read-only), so the ARM build does not have to fetch everything again.
-SEED_SRC="nethsecurity_builder_${OWRT_VERSION}_downloads"
-if ! podman volume exists "${VOL_PREFIX}_downloads" && podman volume exists "$SEED_SRC"; then
+SEED_SRC=""
+for candidate in "nexwall_arm_builder_${OWRT_VERSION}_armsr_armv8_downloads" "nethsecurity_builder_${OWRT_VERSION}_downloads"; do
+    if podman volume exists "$candidate"; then SEED_SRC="$candidate"; break; fi
+done
+if ! podman volume exists "${VOL_PREFIX}_downloads" && [ -n "$SEED_SRC" ]; then
     echo "Seeding ${VOL_PREFIX}_downloads from $SEED_SRC (read-only copy)..."
     podman volume create "${VOL_PREFIX}_downloads" >/dev/null
     podman run --rm --entrypoint cp \

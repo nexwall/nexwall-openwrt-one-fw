@@ -36,7 +36,7 @@ define Package/netifyd
 	TITLE:=Traffic classification engine (Netify Agent)
 	URL:=https://gitlab.com/netify.ai/public/netify-agent
 	DEPENDS:= \
-		@(aarch64||x86_64) \
+		@(aarch64||arm||x86_64) \
 		+ca-bundle \
 		+libatomic \
 		+libcurl \

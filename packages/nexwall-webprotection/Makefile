@@ -42,10 +42,20 @@ define Package/nexwall-webprotection
 		+openssl-util \
 		+ca-bundle \
 		+nexwall-webd \
-		+clamav \
-		+freshclam \
-		+yara
+		+NEXWALL_WEBPROTECTION_AV:clamav \
+		+NEXWALL_WEBPROTECTION_AV:freshclam \
+		+NEXWALL_WEBPROTECTION_AV:yara
 	PKGARCH:=all
+endef
+
+define Package/nexwall-webprotection/config
+	config NEXWALL_WEBPROTECTION_AV
+		bool "Include the antivirus engines (ClamAV, YARA)"
+		depends on PACKAGE_nexwall-webprotection
+		default y
+		help
+		  Tier 3 of web protection. Turn it off on small devices: ClamAV needs about 1 GiB of RAM and the Rust
+		  host toolchain to build. nexwall-webd then scans nothing (web_protection.av.enabled=0).
 endef
 
 define Package/nexwall-webprotection/description
