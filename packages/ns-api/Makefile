@@ -43,6 +43,7 @@ endef
 define Package/ns-api/conffiles
 /etc/config/ns-api
 /etc/config/ns-wizard
+/etc/config/ns-wireless
 endef
  
 define Package/ns-api/description
@@ -184,6 +185,11 @@ define Package/ns-api/install
 	$(INSTALL_DATA) ./files/ns.nathelpers.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_BIN) ./files/ns.wizard $(1)/usr/libexec/rpcd/
 	$(INSTALL_DATA) ./files/ns.wizard.json $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_BIN) ./files/ns.wireless $(1)/usr/libexec/rpcd/
+	$(INSTALL_DATA) ./files/ns.wireless.json $(1)/usr/share/rpcd/acl.d/
+	$(INSTALL_BIN) ./files/ns-wifi-defaults $(1)/usr/sbin/
+	$(INSTALL_DIR) $(1)/etc/hotplug.d/ieee80211
+	$(INSTALL_BIN) ./files/hotplug/20-ns-wifi $(1)/etc/hotplug.d/ieee80211/
 	$(INSTALL_BIN) ./files/ns.log-viewer $(1)/usr/libexec/rpcd/
 	$(INSTALL_DATA) ./files/ns.log-viewer.json $(1)/usr/share/rpcd/acl.d/
 	$(INSTALL_BIN) ./files/ns.ha $(1)/usr/libexec/rpcd/
@@ -201,6 +207,7 @@ define Package/ns-api/install
 	$(INSTALL_DIR) $(1)/etc/config
 	$(INSTALL_CONF) ./files/config/ns-api $(1)/etc/config/ns-api
 	$(INSTALL_CONF) ./files/config/ns-wizard $(1)/etc/config/ns-wizard
+	$(INSTALL_CONF) ./files/config/ns-wireless $(1)/etc/config/ns-wireless
 	$(INSTALL_CONF) ./files/templates $(1)/etc/config/
 	$(INSTALL_BIN) ./files/pre-commit/fix-redirect-reflections.py $(1)/usr/libexec/ns-api/pre-commit
 	$(INSTALL_BIN) ./files/pre-commit/update-objects.py $(1)/usr/libexec/ns-api/pre-commit

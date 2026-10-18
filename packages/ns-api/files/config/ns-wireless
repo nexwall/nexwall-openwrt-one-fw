@@ -1,0 +1,8 @@
+
+config config 'config'
+	option ssid 'Internet_segura'
+	option key 'internetinternet'
+	option encryption 'psk2'
+	option country 'BR'
+	option enabled '1'
+	option hidden '0'

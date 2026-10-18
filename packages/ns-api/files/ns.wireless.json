@@ -1,0 +1,11 @@
+{
+  "wireless-manager": {
+    "description": "Manage the Wi-Fi access point",
+    "write": {},
+    "read": {
+      "ubus": {
+        "ns.wireless": ["*"]
+      }
+    }
+  }
+}

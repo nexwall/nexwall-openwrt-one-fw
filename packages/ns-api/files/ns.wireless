@@ -1,0 +1,245 @@
+#!/usr/bin/python3
+
+#
+# Copyright (C) 2026 Nexwall
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+# Wi-Fi access point in the LAN zone: SSID and password of the radios (USB adapters), as the setup wizard asks for them.
+#
+# The settings live in /etc/config/ns-wireless (factory default: SSID Internet_segura, WPA2). "set" copies them into every
+# wifi-iface in "ap" mode of /etc/config/wireless and into the country of every radio. A radio that appears later (an adapter
+# plugged after the setup) gets them from /usr/sbin/ns-wifi-defaults, run by the hotplug script of the wireless devices.
+# The access point joins the LAN network, so it is in the lan zone: no zone or firewall change is made here.
+
+import json
+import os
+import re
+import subprocess
+import sys
+
+from euci import EUci
+from nethsec import utils
+from nethsec.utils import ValidationError
+
+DEFAULTS = {
+    "ssid": "Internet_segura",
+    "key": "internetinternet",
+    "encryption": "psk2",
+    "country": "BR",
+    "enabled": True,
+    "hidden": False,
+}
+
+# value of the wifi-iface "encryption" option -> value of ieee80211w (management frame protection), None = option removed
+ENCRYPTIONS = {
+    "psk2": None,        # WPA2-Personal: every client and every adapter
+    "sae-mixed": "1",    # WPA2/WPA3-Personal
+    "sae": "2",          # WPA3-Personal only
+}
+
+
+def load_settings(u):
+    return {
+        "ssid": u.get("ns-wireless", "config", "ssid", default=DEFAULTS["ssid"]),
+        "key": u.get("ns-wireless", "config", "key", default=DEFAULTS["key"]),
+        "encryption": u.get("ns-wireless", "config", "encryption", default=DEFAULTS["encryption"]),
+        "country": u.get("ns-wireless", "config", "country", default=DEFAULTS["country"]),
+        "enabled": u.get("ns-wireless", "config", "enabled", dtype=bool, default=DEFAULTS["enabled"]),
+        "hidden": u.get("ns-wireless", "config", "hidden", dtype=bool, default=DEFAULTS["hidden"]),
+    }
+
+
+def validate(data, current):
+    """Merge the request into the current settings and check every field. Raises ValidationError."""
+    values = dict(current)
+    for name in ("ssid", "key", "encryption", "country"):
+        if name in data:
+            if not isinstance(data[name], str):
+                raise ValidationError(name, "invalid", data[name])
+            values[name] = data[name]
+    for name in ("enabled", "hidden"):
+        if name in data:
+            if not isinstance(data[name], bool):
+                raise ValidationError(name, "invalid", data[name])
+            values[name] = data[name]
+
+    ssid = values["ssid"]
+    if not ssid:
+        raise ValidationError("ssid", "required", ssid)
+    if len(ssid.encode("utf-8")) > 32:
+        raise ValidationError("ssid", "ssid_too_long", ssid)
+    if re.search(r"[\x00-\x1f\x7f]", ssid):
+        raise ValidationError("ssid", "invalid", ssid)
+
+    if values["encryption"] not in ENCRYPTIONS:
+        raise ValidationError("encryption", "invalid_encryption", values["encryption"])
+
+    key = values["key"]
+    if not key:
+        raise ValidationError("key", "required", "")
+    if re.fullmatch(r"[0-9a-fA-F]{64}", key):
+        pass  # a raw 256-bit key
+    elif len(key) < 8:
+        raise ValidationError("key", "key_too_short", "")
+    elif len(key) > 63:
+        raise ValidationError("key", "key_too_long", "")
+    elif not re.fullmatch(r"[\x20-\x7e]+", key):
+        raise ValidationError("key", "key_invalid_characters", "")
+
+    if not re.fullmatch(r"[A-Z]{2}", values["country"]):
+        raise ValidationError("country", "invalid_country", values["country"])
+    return values
+
+
+def delete_option(u, config, section, option):
+    try:
+        u.delete(config, section, option)
+    except Exception:
+        pass  # the option was not there
+
+
+def apply_to_wireless(u, values):
+    """Copy the settings into the radios and the access point interfaces that already exist."""
+    for name in utils.get_all_by_type(u, "wireless", "wifi-device"):
+        u.set("wireless", name, "country", values["country"])
+        u.set("wireless", name, "ns_managed", "1")
+    for name, iface in utils.get_all_by_type(u, "wireless", "wifi-iface").items():
+        if iface.get("mode", "ap") != "ap":
+            continue
+        u.set("wireless", name, "ssid", values["ssid"])
+        u.set("wireless", name, "key", values["key"])
+        u.set("wireless", name, "encryption", values["encryption"])
+        u.set("wireless", name, "network", "lan")
+        u.set("wireless", name, "hidden", "1" if values["hidden"] else "0")
+        u.set("wireless", name, "disabled", "0" if values["enabled"] else "1")
+        u.set("wireless", name, "ns_managed", "1")
+        pmf = ENCRYPTIONS[values["encryption"]]
+        if pmf is None:
+            delete_option(u, "wireless", name, "ieee80211w")
+        else:
+            u.set("wireless", name, "ieee80211w", pmf)
+
+
+def run(cmd, timeout=10):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def usb_attributes(path):
+    """Vendor/product of the USB device that holds an interface: walk up until the directory has idVendor."""
+    while path and path not in ("/", "/sys"):
+        if os.path.exists(os.path.join(path, "idVendor")):
+            def attr(name):
+                try:
+                    with open(os.path.join(path, name)) as f:
+                        return f.read().strip()
+                except OSError:
+                    return ""
+            return {"vendor_id": attr("idVendor"), "product_id": attr("idProduct"), "name": attr("product")}
+        path = os.path.dirname(path)
+    return {}
+
+
+def list_adapters():
+    base = "/sys/class/ieee80211"
+    adapters = []
+    try:
+        phys = sorted(os.listdir(base))
+    except OSError:
+        return adapters
+    for phy in phys:
+        dev = os.path.realpath(os.path.join(base, phy, "device"))
+        if "/usb" in dev:
+            bus = "usb"
+        elif "/mmc" in dev or "sdio" in dev:
+            bus = "sdio"
+        elif "/pci" in dev:
+            bus = "pci"
+        else:
+            bus = "platform"
+        adapter = {"phy": phy, "bus": bus, "driver": "", "name": "", "vendor_id": "", "product_id": "",
+                   "ap_supported": False, "bands": []}
+        try:
+            adapter["driver"] = os.path.basename(os.path.realpath(os.path.join(dev, "driver")))
+        except OSError:
+            pass
+        if bus == "usb":
+            adapter.update(usb_attributes(dev))
+        info = run(["iw", "phy", phy, "info"])
+        modes = re.search(r"Supported interface modes:\n((?:\t\t \* .*\n)+)", info)
+        if modes:
+            adapter["ap_supported"] = "AP" in re.findall(r"\* (\S+)", modes.group(1))
+        bands = set()
+        for freq in re.findall(r"\* (\d{4}) MHz \[", info):
+            freq = int(freq)
+            if freq < 3000:
+                bands.add("2g")
+            elif freq < 5900:
+                bands.add("5g")
+            else:
+                bands.add("6g")
+        adapter["bands"] = sorted(bands)
+        adapters.append(adapter)
+    return adapters
+
+
+def list_radios():
+    out = run(["ubus", "call", "network.wireless", "status"])
+    try:
+        status = json.loads(out or "{}")
+    except ValueError:
+        return []
+    radios = []
+    for name, radio in sorted(status.items()):
+        config = radio.get("config", {})
+        radios.append({
+            "radio": name,
+            "up": bool(radio.get("up")),
+            "disabled": bool(radio.get("disabled")),
+            "band": config.get("band", ""),
+            "channel": config.get("channel", ""),
+            "country": config.get("country", ""),
+            "interfaces": [{
+                "section": i.get("section", ""),
+                "ifname": i.get("ifname", ""),
+                "ssid": i.get("config", {}).get("ssid", ""),
+                "mode": i.get("config", {}).get("mode", ""),
+                "network": i.get("config", {}).get("network", []),
+            } for i in radio.get("interfaces", [])],
+        })
+    return radios
+
+
+cmd = sys.argv[1]
+
+if cmd == "list":
+    json.dump({
+        "get": {},
+        "set": {"ssid": "str", "key": "str", "encryption": "str", "country": "str", "enabled": True, "hidden": False},
+    }, sys.stdout)
+elif cmd == "call":
+    action = sys.argv[2]
+    e_uci = EUci()
+    if action == "get":
+        json.dump({
+            "settings": load_settings(e_uci),
+            "adapters": list_adapters(),
+            "radios": list_radios(),
+            "defaults": {"ssid": DEFAULTS["ssid"], "encryption": DEFAULTS["encryption"], "country": DEFAULTS["country"]},
+        }, sys.stdout)
+    elif action == "set":
+        try:
+            values = validate(json.loads(sys.stdin.read() or "{}"), load_settings(e_uci))
+            for name in ("ssid", "key", "encryption", "country"):
+                e_uci.set("ns-wireless", "config", name, values[name])
+            e_uci.set("ns-wireless", "config", "enabled", values["enabled"])
+            e_uci.set("ns-wireless", "config", "hidden", values["hidden"])
+            apply_to_wireless(e_uci, values)
+            e_uci.save("ns-wireless")
+            e_uci.save("wireless")
+            json.dump({"message": "success"}, sys.stdout)
+        except ValidationError as ex:
+            json.dump(utils.validation_error(ex.parameter, ex.message, ex.value), sys.stdout)

@@ -1,0 +1,59 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2026 Nexwall
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+# Gives the Wi-Fi settings of /etc/config/ns-wireless to the radios nobody has set up yet. "wifi config" (run by the hotplug script
+# 10-wifi-detect when a radio appears) creates them with the OpenWrt defaults: SSID "OpenWrt", no encryption, switched off.
+# A section with ns_managed=1 is left alone, so what the administrator chose (wizard, ns.wireless) is never overwritten.
+# The access point is attached to the lan network, so the lan zone of the firewall covers it.
+# Prints "changed" when it wrote something (the caller then reloads the Wi-Fi). UCI_CONF is for the tests only.
+
+UCI="uci${UCI_CONF:+ -c $UCI_CONF}"
+cfg() { v="$($UCI -q get "ns-wireless.config.$1")"; [ -n "$v" ] && echo "$v" || echo "$2"; }
+
+ssid="$(cfg ssid Internet_segura)"
+key="$(cfg key internetinternet)"
+enc="$(cfg encryption psk2)"
+country="$(cfg country BR)"
+enabled="$(cfg enabled 1)"
+hidden="$(cfg hidden 0)"
+disabled=0
+[ "$enabled" = 1 ] || disabled=1
+changed=0
+
+for sec in $($UCI -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-device$/\1/p'); do
+	[ "$($UCI -q get "wireless.$sec.ns_managed")" = 1 ] && continue
+	$UCI set "wireless.$sec.country=$country"
+	$UCI set "wireless.$sec.disabled=0"
+	$UCI set "wireless.$sec.ns_managed=1"
+	changed=1
+done
+
+for sec in $($UCI -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface$/\1/p'); do
+	[ "$($UCI -q get "wireless.$sec.ns_managed")" = 1 ] && continue
+	mode="$($UCI -q get "wireless.$sec.mode")"
+	[ -z "$mode" -o "$mode" = ap ] || continue
+	$UCI set "wireless.$sec.mode=ap"
+	$UCI set "wireless.$sec.ssid=$ssid"
+	$UCI set "wireless.$sec.key=$key"
+	$UCI set "wireless.$sec.encryption=$enc"
+	$UCI set "wireless.$sec.network=lan"
+	$UCI set "wireless.$sec.hidden=$hidden"
+	$UCI set "wireless.$sec.disabled=$disabled"
+	$UCI set "wireless.$sec.ns_managed=1"
+	case "$enc" in
+		sae-mixed) $UCI set "wireless.$sec.ieee80211w=1" ;;
+		sae) $UCI set "wireless.$sec.ieee80211w=2" ;;
+		*) $UCI -q delete "wireless.$sec.ieee80211w" ;;
+	esac
+	changed=1
+done
+
+if [ "$changed" = 1 ]; then
+	$UCI commit wireless
+	echo changed
+fi
+exit 0

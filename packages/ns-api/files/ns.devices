@@ -6,6 +6,7 @@
 #
 
 import json
+import os
 import sys
 import subprocess
 import re
@@ -373,6 +374,10 @@ def get_physical_devices():
     for device in devices:
         # discard lo and ifb-* devices
         if should_omit_device_name(device.get('ifname')):
+            continue
+
+        # discard Wi-Fi access point interfaces: they are members of the lan bridge and managed by ns.wireless
+        if device.get('master') and os.path.isdir('/sys/class/net/%s/wireless' % device.get('ifname')):
             continue
 
         # process devices attributes

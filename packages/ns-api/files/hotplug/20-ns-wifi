@@ -1,0 +1,17 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2026 Nexwall
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+# Runs after 10-wifi-detect (which creates the radio in /etc/config/wireless): applies the Nexwall Wi-Fi settings to it and
+# reloads the Wi-Fi when something changed.
+[ "${ACTION}" = "add" ] || exit 0
+[ -f /etc/board.json ] || exit 0
+
+(
+	flock 9
+	[ "$(/usr/sbin/ns-wifi-defaults)" = changed ] && /sbin/wifi reload
+) 9>/var/lock/ns-wifi-defaults.lock
+exit 0

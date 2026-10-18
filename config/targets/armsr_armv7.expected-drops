@@ -7,6 +7,7 @@ CONFIG_OPENVPN_openssl_ENABLE_MULTIHOME=y
 CONFIG_PACKAGE_clamav=y
 CONFIG_PACKAGE_freshclam=y
 CONFIG_PACKAGE_kmod-fixed-phy=m
+CONFIG_PACKAGE_kmod-usb-core=m
 CONFIG_PACKAGE_libpcre=y
 CONFIG_PACKAGE_luci-app-wireguard=y
 CONFIG_PACKAGE_luci-ssl-nginx=y
