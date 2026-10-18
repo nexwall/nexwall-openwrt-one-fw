@@ -19,7 +19,7 @@ PKG_HASH:=skip
 PKG_MAINTAINER:=Tommaso Bailetti <tommaso.bailetti@nethesis.it>
 PKG_LICENSE:=Apache-2.0
 
-PKG_BUILD_DEPENDS:=golang/host
+PKG_BUILD_DEPENDS:=golang/host zstd
 PKG_BUILD_PARALLEL:=1
 PKG_BUILD_FLAGS:=no-mips16
 
@@ -34,6 +34,18 @@ GO_PKG_TAGS:= \
 	netgo \
 	osusergo \
 	musl
+
+# gozstd bundles a prebuilt libzstd_linux_arm.a compiled for the soft-float ABI: it cannot be linked into the
+# hard-float (VFP) ARMv7 userland of OpenWrt. On 32-bit ARM it is replaced by the static libzstd built by the
+# zstd package of the same toolchain (same API: ZSTD_* and ZDICT_*).
+define Victoria/ZstdArm
+	if [ "$(ARCH)" = "arm" ]; then \
+		lib="$$$$(ls $(BUILD_DIR)/zstd-*/ipkg-install/usr/lib/libzstd.a 2>/dev/null | head -1)"; \
+		[ -n "$$$$lib" ] || { echo "libzstd.a of the zstd package not found" >&2; exit 1; }; \
+		cp -f "$$$$lib" $(PKG_BUILD_DIR)/vendor/github.com/valyala/gozstd/libzstd_linux_arm.a; \
+	fi
+endef
+Hooks/Prepare/Post+=Victoria/ZstdArm
 
 include $(INCLUDE_DIR)/package.mk
 include $(TOPDIR)/feeds/packages/lang/golang/golang-package.mk
