@@ -10,5 +10,4 @@
 | Antivirus engines | off in the lite profile (`NEXWALL_WEBPROTECTION_AV=n`); to be enabled per board after RAM measurements |
 | Defconfig drop check | `config/targets/mediatek_filogic.expected-drops`: a requested symbol that `make defconfig` drops and is not listed stops the build |
 
-Board profiles live in `config/profiles/`. Adding a board: copy a profile, set the device name of the OpenWrt
-`target/linux/mediatek/image/filogic.mk` and the profile string, build once and review the dropped symbols.
+The profile is `config/profiles/openwrt_one.conf` (`PROFILE=openwrt_one`, the default).

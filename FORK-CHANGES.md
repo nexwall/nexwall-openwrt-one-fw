@@ -105,10 +105,10 @@ Separate project from nexwall/firewall-msp (x86); no branches in the main reposi
 - Local vendor packages: `build-nexwall.sh` copies `vendor-local/*.tar.gz` (git-ignored; locally built from the private repositories) into the target's download cache before each build. ARM builds do not use the published vendor feed; the recipes' per-file SHA-256 pins still apply.
 - ARMv7 fork (firewall-msp-armv7, from firewall-msp-arm 04593c5): own builder names (`nexwall-armv7-*`, volumes `nexwall_armv7_builder_*`); target `armsr_armv7` (generic UEFI 32-bit, for QEMU); netifyd allowed on `arm` (DPI was gated to aarch64/x86_64 by this repository, not by the vendor); `NEXWALL_WEBPROTECTION_AV` (default y) makes ClamAV/YARA optional, off for armv7 (lite profile, DPI stays).
 
-## Banana Pi (MediaTek Filogic) build
+## OpenWrt One (MediaTek Filogic) build
 
 - `config/targets/mediatek_filogic.conf` and `config/profiles/<board>.conf`: one target and one package architecture (`aarch64_cortex-a53`) for every Filogic board; the board is selected with `PROFILE` (`build-nexwall.sh`, `builder/configure-build.sh`, `builder/Containerfile`).
-- Builder and volume names `nexwall-bananapi-*` / `nexwall_bananapi_builder_*`: never shared with the x86 build.
+- Builder and volume names `nexwall-owrt-one-*` / `nexwall_owrt_one_builder_*`: never shared with the x86 build.
 - Vendor recipes pin one SHA-256 (and one version) per architecture; an enabled component without an `aarch64` pin stops the build.
 - `ns-wan-fallback` (static WAN fallback 192.168.0.2/24 when DHCP gives no lease) and its `uci-defaults`.
 - Wi-Fi access point stack (`config/wireless.conf`), defconfig drop check, optional antivirus engines (`NEXWALL_WEBPROTECTION_AV`).
