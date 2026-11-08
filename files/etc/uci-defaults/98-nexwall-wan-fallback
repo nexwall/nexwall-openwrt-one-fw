@@ -1,0 +1,11 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2026 Nexwall
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+# Static fallback of the WAN (192.168.0.2/24, gateway 192.168.0.1, DNS 192.168.0.1 and 8.8.8.8) when DHCP gives no
+# lease: see /usr/sbin/ns-wan-fallback. Enabled on every unit; it only acts while the WAN has no DHCP address.
+/etc/init.d/ns-wan-fallback enable 2>/dev/null
+exit 0

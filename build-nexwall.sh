@@ -31,7 +31,9 @@ eval "$_env_snapshot"
 OWRT_VERSION=${OWRT_VERSION:?Missing OWRT_VERSION environment variable}
 NETHSECURITY_VERSION=${NETHSECURITY_VERSION:?Missing NETHSECURITY_VERSION environment variable}
 REPO_CHANNEL=${REPO_CHANNEL:-dev}
-TARGET=${TARGET:-x86_64}
+TARGET=${TARGET:-mediatek_filogic}
+# Board profile (config/profiles/<PROFILE>.conf): the image of one board. Same TARGET and volumes for every board.
+PROFILE=${PROFILE:-bananapi_bpi-r3}
 BUILD_SEMVER_SUFFIX=${BUILD_SEMVER_SUFFIX:-}
 BUILD_VERBOSE=${BUILD_VERBOSE:-}
 # Parallel make jobs inside the builder; empty means one per CPU. Lower it on small-RAM hosts.
@@ -42,14 +44,14 @@ MAKE_JOBS=${MAKE_JOBS:-}
 case "$TARGET" in
     x86*) echo "ERROR: $TARGET is an x86 target; x86 is built from the main repository" >&2; exit 1 ;;
 esac
-BUILDER_PREFIX=nexwall-armv7
+BUILDER_PREFIX=nexwall-bananapi
 IMAGE_NAME="${BUILDER_PREFIX}-next"
 CONTAINER_NAME="${BUILDER_PREFIX}-builder"
-VOL_PREFIX="nexwall_armv7_builder_${OWRT_VERSION}_${TARGET}"
+VOL_PREFIX="nexwall_bananapi_builder_${OWRT_VERSION}_${TARGET}"
 # one build at a time on the server (CPU, ccache): only checks the x86 container, never touches it
-for other in nethsecurity-builder nexwall-arm-builder; do
+for other in nethsecurity-builder nexwall-arm-builder nexwall-armv7-builder; do
     if podman ps --format '{{.Names}}' | grep -qx "$other"; then
-        echo "ERROR: $other is running; not starting an ARMv7 build at the same time" >&2
+        echo "ERROR: $other is running; not starting an Banana Pi build at the same time" >&2
         exit 1
     fi
 done
@@ -69,6 +71,7 @@ podman build \
     --build-arg OWRT_VERSION="$OWRT_VERSION" \
     --build-arg REPO_CHANNEL="$REPO_CHANNEL" \
     --build-arg TARGET="$TARGET" \
+    --build-arg PROFILE="$PROFILE" \
     --build-arg NETHSECURITY_VERSION="$NETHSECURITY_VERSION" \
     --build-arg BUILD_SEMVER_SUFFIX="$BUILD_SEMVER_SUFFIX" \
     .

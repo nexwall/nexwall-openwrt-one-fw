@@ -11,6 +11,7 @@ set -e
 nethsecurity_version=${NETHSECURITY_VERSION:?Missing NETHSECURITY_VERSION environment variable}
 repo_channel=${REPO_CHANNEL:?Missing REPO_CHANNEL environment variable}
 target=${TARGET:?Missing TARGET environment variable}
+profile=${PROFILE:-}
 owrt_version=${OWRT_VERSION:?Missing OWRT_VERSION environment variable}
 build_semver_suffix=${BUILD_SEMVER_SUFFIX:-}
 
@@ -45,6 +46,11 @@ CONFIG_VERSION_REPO="https://updates.nexwall.com.br/${repo_channel}/${nethsecuri
 CONFIG_VERSION_SUPPORT_URL="https://support.nexwall.com.br"
 EOF
 cat "config/targets/${target}.conf" >> .config
+# Board profile: the device selected inside the target (one image per board, one package set for all)
+if [ -n "$profile" ]; then
+    [ -f "config/profiles/${profile}.conf" ] || { echo "ERROR: unknown profile $profile (config/profiles/)" >&2; exit 1; }
+    cat "config/profiles/${profile}.conf" >> .config
+fi
 
 # Write version information into a file
 echo "${repo_channel}" > files/etc/repo-channel
@@ -56,7 +62,7 @@ make defconfig
 # expected-drops list, a requested symbol that is missing from the result and not on the list stops the build.
 expected="config/targets/${target}.expected-drops"
 if [ -f "$expected" ]; then
-    cat config/*.conf "config/targets/${target}.conf" | grep -E '^CONFIG_[A-Za-z0-9_+-]+=[ym]$' | sort -u > /tmp/requested.config
+    cat config/*.conf "config/targets/${target}.conf" ${profile:+"config/profiles/${profile}.conf"} | grep -E '^CONFIG_[A-Za-z0-9_+-]+=[ym]$' | sort -u > /tmp/requested.config
     grep -E '^CONFIG_[A-Za-z0-9_+-]+=[ym]$' .config | sort -u > /tmp/result.config
     unexpected=$(comm -23 /tmp/requested.config /tmp/result.config | grep -v -x -F -f "$expected" || true)
     if [ -n "$unexpected" ]; then

@@ -68,6 +68,7 @@ COPY --chown=buildbot:buildbot config config
 # Build utils and volumes setup
 ARG REPO_CHANNEL
 ARG TARGET
+ARG PROFILE
 ARG NETHSECURITY_VERSION
 ARG BUILD_SEMVER_SUFFIX
 COPY --chmod=777 builder/configure-build.sh /usr/local/bin/configure-build

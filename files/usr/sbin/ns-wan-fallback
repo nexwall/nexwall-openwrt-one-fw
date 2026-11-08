@@ -1,0 +1,91 @@
+#!/bin/sh
+
+#
+# Copyright (C) 2026 Nexwall
+# SPDX-License-Identifier: GPL-2.0-only
+#
+
+# Static fallback for the WAN port (ARMv7 bench image). While the WAN asks for an address by DHCP and gets none, the
+# interface wan_fallback (192.168.0.2/24, gateway 192.168.0.1, DNS 192.168.0.1 and 8.8.8.8) is brought up on the same port.
+# When a DHCP lease arrives it is taken down again. Only a WAN configured for DHCP is watched: a WAN the administrator set
+# to static, PPPoE and so on is never touched.
+# NS_WAN_FALLBACK_CONFIG_ONLY=1 only writes the configuration (tests); UCI_CONF is for the tests only.
+
+UCI="uci${UCI_CONF:+ -c $UCI_CONF}"
+IF="wan"
+FB="wan_fallback"
+WAIT="${NS_WAN_FALLBACK_WAIT:-45}"
+STEP="${NS_WAN_FALLBACK_STEP:-5}"
+
+# creates (or corrects) the fallback interface and puts it in the zone of the WAN; returns 0 when something changed
+ensure_config() {
+	local dev changed=0 zone
+	dev="$($UCI -q get network.$IF.device)"
+	[ -n "$dev" ] || return 1
+	if [ "$($UCI -q get network.$FB.device)" != "$dev" ] || [ "$($UCI -q get network.$FB.ipaddr)" != "192.168.0.2/24" ]; then
+		$UCI -q batch <<EOI
+set network.$FB=interface
+set network.$FB.device='$dev'
+set network.$FB.proto='static'
+set network.$FB.auto='0'
+set network.$FB.ipaddr='192.168.0.2/24'
+set network.$FB.gateway='192.168.0.1'
+set network.$FB.metric='20'
+delete network.$FB.dns
+add_list network.$FB.dns='192.168.0.1'
+add_list network.$FB.dns='8.8.8.8'
+commit network
+EOI
+		changed=1
+	fi
+	zone="$($UCI -q show firewall | sed -n "s/^firewall\.\([^.]*\)\.name='wan'$/\1/p" | head -1)"
+	if [ -n "$zone" ] && ! $UCI -q get "firewall.$zone.network" | grep -qw "$FB"; then
+		$UCI -q add_list "firewall.$zone.network=$FB"
+		$UCI -q commit firewall
+		changed=2
+	fi
+	return $((changed == 0))
+}
+
+has_lease() {
+	[ -n "$(ifstatus "$IF" 2>/dev/null | jsonfilter -q -e '@["ipv4-address"][0].address')" ]
+}
+
+fallback_up() {
+	[ "$(ifstatus "$FB" 2>/dev/null | jsonfilter -q -e '@.up')" = "true" ]
+}
+
+if [ -n "$NS_WAN_FALLBACK_CONFIG_ONLY" ]; then
+	ensure_config
+	exit 0
+fi
+
+# wait for the WAN to exist (the wizard or the first-boot scripts create it)
+n=0
+while [ -z "$($UCI -q get network.$IF.device)" ]; do
+	n=$((n + 1)); [ "$n" -gt 60 ] && exit 0
+	sleep 5
+done
+
+if ensure_config; then
+	ubus call network reload >/dev/null 2>&1
+	/etc/init.d/firewall reload >/dev/null 2>&1
+fi
+
+waited=0
+while :; do
+	if [ "$($UCI -q get network.$IF.proto)" != "dhcp" ]; then
+		fallback_up && ifdown "$FB"
+		waited=0
+	elif has_lease; then
+		fallback_up && ifdown "$FB"
+		waited=0
+	else
+		waited=$((waited + STEP))
+		if [ "$waited" -ge "$WAIT" ] && ! fallback_up; then
+			logger -t ns-wan-fallback "no DHCP lease on $IF, using 192.168.0.2/24"
+			ifup "$FB"
+		fi
+	fi
+	sleep "$STEP"
+done
